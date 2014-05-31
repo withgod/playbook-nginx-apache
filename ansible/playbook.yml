@@ -1,0 +1,118 @@
+---
+- hosts: all
+  tags: base
+  tasks:
+  - name: install npd
+    yum: name=ntp state=latest
+  - name: install ganglia pkgs
+    yum: name={{item}} state=present
+    with_flattened:
+      - /vagrant/ansible/rpms/libganglia-3.6.0-1.x86_64.rpm
+      - /vagrant/ansible/rpms/ganglia-gmond-3.6.0-1.x86_64.rpm
+      - /vagrant/ansible/rpms/ganglia-gmond-modules-python-3.6.0-1.x86_64.rpm
+  - name: ensure service is running
+    service: name={{item}} state=started
+    with_items:
+      - gmond
+      - ntpd
+  - name: update gmond.conf
+    template: src=src/gmond.conf.j2 dest=/etc/ganglia/gmond.conf
+    notify:
+    - restart gmond
+  handlers:
+    - name: restart gmond
+      service: name=gmond state=restarted
+- hosts: web
+  tags: httpd
+  tasks:
+  - name: ensure httpd is at the latest version
+    yum: name=httpd state=latest
+  - name: ensure php is at the latest version
+    yum: name=php state=latest
+    notify:
+    - restart httpd
+  - name: ensure httpd is running
+    service: name=httpd state=started
+  - name: update httpd.conf
+    template: src=src/httpd.conf.j2 dest=/etc/httpd/conf/httpd.conf
+    when: skip_httpd_conf != 1
+    notify:
+    - restart httpd
+#  - name: debug
+#    debug: var=skip_httpd_conf
+  - name: added server-status.conf
+    template: src=src/server-status.conf dest=/etc/httpd/conf.d/
+    notify:
+    - restart httpd
+  - name: added hostname.php
+    template: src=src/{{item}} dest=/var/www/html
+    with_items:
+    - hostname.php
+    - sleep.php
+  - name: added apache_status.py
+    template: src=src/apache_status.py dest=/usr/lib64/ganglia/python_modules
+    notify:
+    - restart gmond
+  - name: added apache_status.pyconf
+    template: src=src/apache_status.pyconf dest=/etc/ganglia/conf.d
+    notify:
+    - restart gmond
+  handlers:
+    - name: restart httpd
+      service: name=httpd state=restarted
+    - name: restart gmond
+      service: name=gmond state=restarted
+- hosts: nginx
+  tags: nginx
+  tasks:
+  - name: ensure nginx is at the latest version
+    yum: name=http://nginx.org/packages/rhel/6/x86_64/RPMS/nginx-1.2.8-1.el6.ngx.x86_64.rpm
+    tags: nginx
+  - name: ensure nginx is running
+    service: name=nginx state=started
+  - name: added nginx status.conf
+    template: src=src/default.conf dest=/etc/nginx/conf.d/
+    notify: restart nginx
+  - name: updated nginx.conf
+    template: src=src/nginx.conf dest=/etc/nginx/
+    notify: restart nginx
+  - name: added nginx_status.py
+    template: src=src/nginx_status.py dest=/usr/lib64/ganglia/python_modules
+    notify:
+    - restart gmond
+  - name: added nginx_status.pyconf
+    template: src=src/nginx_status.pyconf dest=/etc/ganglia/conf.d
+    notify:
+    - restart gmond
+  handlers:
+    - name: restart nginx
+      service: name=nginx state=restarted
+    - name: restart gmond
+      service: name=gmond state=restarted
+- hosts: manager
+  tags: manager
+  tasks:
+  - name: install manager pkgs
+    yum: name={{item}} state=present
+    with_flattened:
+      - /vagrant/ansible/rpms/ganglia-gmetad-3.6.0-1.x86_64.rpm
+      - /vagrant/ansible/rpms/ganglia-web-3.5.12-1.noarch.rpm
+    notify: restart httpd
+  - name: ensure gmetad is running
+    service: name=gmetad state=started
+  - name: change owner
+    command: 'chown -R apache:apache /var/lib/ganglia-web/dwoo /var/lib/ganglia-web/conf'
+  - name: added ganglia-web conf
+    template: src=src/conf.php dest=/var/www/html/ganglia
+  - name: added ganglia graph
+    template: src=src/{{item}} dest=/var/www/html/ganglia/graph.d
+    with_items:
+      - nginx_scoreboard_report.php
+      - nginx_accepts_ratio_report.php
+      - apache_status_report.php
+      - apache_threads_report.json
+  handlers:
+    - name: restart gmetad
+      service: name=gmmetad state=restarted
+    - name: restart httpd
+      service: name=httpd state=restarted

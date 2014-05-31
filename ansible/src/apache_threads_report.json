@@ -1,0 +1,10 @@
+{
+    "report_name" : "apache_threads_report",
+        "report_type" : "standard",
+        "title" : "apache threads report",
+        "vertical_label" : "count",
+        "series" : [
+        { "metric": "ap_busy_workers", "color": "ff0000", "label": "busy", "line_width": "2", "type": "stack" },
+        { "metric": "ap_idle_workers", "color": "0000ff", "label": "idle", "line_width": "2", "type": "stack" }
+    ]
+}
